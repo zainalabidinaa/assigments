@@ -1,0 +1,1 @@
+clean: python clean_calendar.py
