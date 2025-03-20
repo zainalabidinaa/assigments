@@ -7,16 +7,25 @@ from icalendar import Calendar, Event
 ICS_URL = os.environ.get('ICS_URL')
 
 def clean_event_summary(summary):
+    """
+    Extract only the text within 'Moment:' and remove 'Aktivitetstyp' from the summary.
+    """
+    # Remove 'Aktivitetstyp' explicitly
+    summary = re.sub(r'Aktivitetstyp', '', summary)
+
     # Extract Moment from the summary
     moment_pattern = r'Moment:([^:]+)'
     match = re.search(moment_pattern, summary)
     
     if match:
-        return match.group(1).strip()
+        return match.group(1).strip()  # Return only the extracted text, trimmed of whitespace
     else:
-        return "Untitled Event"
+        return summary.strip()  # Return cleaned summary without 'Aktivitetstyp'
 
 def clean_calendar():
+    """
+    Fetch and clean the calendar by extracting only relevant information.
+    """
     # Fetch the original calendar data from the ICS URL
     response = requests.get(ICS_URL)
     original_cal = Calendar.from_ical(response.text)
