@@ -7,22 +7,16 @@ from icalendar import Calendar, Event
 ICS_URL = os.environ.get('ICS_URL')
 
 def clean_event_summary(summary):
-    """
-    Extract only the text within 'Moment:' from the event summary.
-    """
-    # Regex to extract text after 'Moment:' and exclude the label itself
-    moment_pattern = r'Moment:([^:]+)'  # Captures everything after 'Moment:' until the next colon or end of line
+    # Extract Moment from the summary
+    moment_pattern = r'Moment:([^:]+)'
     match = re.search(moment_pattern, summary)
     
     if match:
-        return match.group(1).strip()  # Return only the extracted text, trimmed of whitespace
+        return match.group(1).strip()
     else:
-        return "Untitled Event"  # Default title if no 'Moment:' is found
+        return "Untitled Event"
 
 def clean_calendar():
-    """
-    Fetch and clean the calendar by extracting only relevant information.
-    """
     # Fetch the original calendar data from the ICS URL
     response = requests.get(ICS_URL)
     original_cal = Calendar.from_ical(response.text)
