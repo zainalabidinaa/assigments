@@ -8,19 +8,26 @@ ICS_URL = os.environ.get('ICS_URL')
 
 def clean_event_summary(summary):
     """
-    Extract only the text within 'Moment:' and remove 'Aktivitetstyp' from the summary.
+    Extract course code, remove 'Aktivitetstyp', and clean the summary.
     """
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
+    # Extract course code (assuming it starts with BMA followed by digits)
+    course_code_match = re.search(r'(BMA\d{3})', summary)
+    course_code = course_code_match.group(1) if course_code_match else ''
+
     # Extract Moment from the summary
     moment_pattern = r'Moment:([^:]+)'
-    match = re.search(moment_pattern, summary)
+    moment_match = re.search(moment_pattern, summary)
     
-    if match:
-        return match.group(1).strip()  # Return only the extracted text, trimmed of whitespace
+    if moment_match:
+        moment = moment_match.group(1).strip()
+        return f"{course_code}: {moment}" if course_code else moment
     else:
-        return summary.strip()  # Return cleaned summary without 'Aktivitetstyp'
+        # If no Moment found, return the course code (if any) followed by the cleaned summary
+        cleaned_summary = summary.strip()
+        return f"{course_code}: {cleaned_summary}" if course_code else cleaned_summary
 
 def clean_calendar():
     """
