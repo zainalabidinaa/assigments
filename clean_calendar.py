@@ -8,18 +8,18 @@ ICS_URL = os.environ.get('ICS_URL')
 
 def clean_event_summary(summary):
     """
-    Extract course code, remove 'Aktivitetstyp', and clean the summary.
+    Extract the first course code, remove 'Aktivitetstyp', and clean the summary.
     """
     print(f"Original summary: {summary}")  # Debug print
 
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
-    # Extract course code (searching in the entire summary)
+    # Extract the first course code (starts with BMA and followed by digits)
     course_code_match = re.search(r'(BMA\d{3})', summary)
     course_code = course_code_match.group(1) if course_code_match else ''
 
-    print(f"Extracted course code: {course_code}")  # Debug print
+    print(f"Extracted first course code: {course_code}")  # Debug print
 
     # Extract Moment from the summary
     moment_pattern = r'Moment:([^:]+)'
