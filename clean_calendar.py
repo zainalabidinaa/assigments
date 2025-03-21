@@ -15,23 +15,24 @@ def clean_event_summary(summary):
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
-    # Extract the first course code (starts with BMA and followed by digits)
-    course_code_match = re.search(r'(BMA\d{3})', summary)
-    course_code = course_code_match.group(1) if course_code_match else ''
-
-    print(f"Extracted first course code: {course_code}")  # Debug print
-
-    # Extract Moment from the summary
-    moment_pattern = r'Moment:([^:]+)'
-    moment_match = re.search(moment_pattern, summary)
+    # Extract all course codes (BMA followed by digits)
+    course_codes = re.findall(r'(BMA\d{3})', summary)
     
-    if moment_match:
-        moment = moment_match.group(1).strip()
-        result = f"{course_code}: {moment}" if course_code else moment
+    # Remove all course codes from the summary
+    for code in course_codes:
+        summary = summary.replace(code, '')
+
+    # Clean up any remaining commas and whitespace
+    summary = re.sub(r'\s*,\s*', ' ', summary).strip()
+
+    print(f"Extracted course codes: {course_codes}")  # Debug print
+    print(f"Cleaned summary: {summary}")  # Debug print
+
+    # Construct the final result
+    if course_codes:
+        result = f"{course_codes[0]}: {summary}"  # Use only the first course code
     else:
-        # If no Moment found, return the course code (if any) followed by the cleaned summary
-        cleaned_summary = summary.strip()
-        result = f"{course_code}: {cleaned_summary}" if course_code else cleaned_summary
+        result = summary  # If no course code, return just the cleaned summary
 
     print(f"Final result: {result}")  # Debug print
     return result
