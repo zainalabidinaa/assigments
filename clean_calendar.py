@@ -6,33 +6,62 @@ from icalendar import Calendar, Event
 # Fetch the ICS URL from environment variables
 ICS_URL = os.environ.get('ICS_URL')
 
+COURSE_CODE_MAPPING = {
+    "Laboratoriemedicin vår T3, Biomedicinsk laboratorievetenskap II, Laboratoriemedicin och laboratorievetenskapliga metoder Laboratoriemedicin vår T4": "BMA451",
+    "Proteinkemi och analysmetoder": "BMA052",
+    "Laboratoriemedicin - höst T4, Laboratoriemedicin - höst T3": "BMA351"
+}
+
 def clean_event_summary(summary):
     """
-    Extract the first course code, remove 'Aktivitetstyp', and clean the summary.
+    Clean the summary to extract relevant information.
     """
     print(f"Original summary: {summary}")  # Debug print
 
-    # Remove 'Aktivitetstyp' explicitly
-    summary = re.sub(r'Aktivitetstyp', '', summary)
-
-    # Extract all course codes (BMA followed by digits)
-    course_codes = re.findall(r'(BMA\d{3})', summary)
-    
-    # Remove all course codes from the summary
-    for code in course_codes:
-        summary = summary.replace(code, '')
-
-    # Clean up any remaining commas and whitespace
-    summary = re.sub(r'\s*,\s*', ' ', summary).strip()
-
-    print(f"Extracted course codes: {course_codes}")  # Debug print
-    print(f"Cleaned summary: {summary}")  # Debug print
-
-    # Construct the final result
-    if course_codes:
-        result = f"{course_codes[0]}: {summary}"  # Use only the first course code
+    # Remove everything before "Moment:"
+    moment_match = re.search(r'Moment:(.*)', summary)
+    if moment_match:
+        summary = f"Moment:{moment_match.group(1)}"
     else:
-        result = summary  # If no course code, return just the cleaned summary
+        print("No 'Moment:' found in summary.")  # Debug print
+        return summary  # If no Moment, return original
+
+    # Remove everything after "Aktivitetstyp:"
+    aktivitetstyp_match = re.search(r'(.*)Aktivitetstyp:', summary)
+    if aktivitetstyp_match:
+        summary = aktivitetstyp_match.group(1).strip()
+    else:
+        print("No 'Aktivitetstyp:' found in summary.")  # Debug print
+
+    # Extract course code
+    course_code = None
+    course_code_match = re.search(r'\b([A-Z][A-Za-z0-9]{3})\b', summary)
+
+    # Check specific cheat codes
+    for key, code in COURSE_CODE_MAPPING.items():
+        if key in summary:
+            course_code = code
+            break
+
+    # Handle cases like "BMA401, BMA451, ..."
+    if "Kurs.grp:" in summary and course_code is None:
+        kurs_grp_match = re.search(r"Kurs\.grp: (.*)", summary)
+        if kurs_grp_match:
+            kurs_grp = kurs_grp_match.group(1).strip()
+            for key, code in COURSE_CODE_MAPPING.items():
+                if key in kurs_grp:
+                    course_code = code
+                    break
+        summary = re.sub(r'^[A-Z0-9, ]*dp\s*\d+', '', summary)  # Remove text before 'dp' in Kurs.grp cases
+
+    if course_code_match:
+       course_code = course_code_match.group(1)
+
+    # Construct final result
+    if course_code:
+        result = f"{course_code}: {summary}"
+    else:
+        result = summary
 
     print(f"Final result: {result}")  # Debug print
     return result
