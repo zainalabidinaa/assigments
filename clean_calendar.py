@@ -10,12 +10,16 @@ def clean_event_summary(summary):
     """
     Extract course code, remove 'Aktivitetstyp', and clean the summary.
     """
+    print(f"Original summary: {summary}")  # Debug print
+
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
-    # Extract course code (assuming it starts with BMA followed by digits)
+    # Extract course code (searching in the entire summary)
     course_code_match = re.search(r'(BMA\d{3})', summary)
     course_code = course_code_match.group(1) if course_code_match else ''
+
+    print(f"Extracted course code: {course_code}")  # Debug print
 
     # Extract Moment from the summary
     moment_pattern = r'Moment:([^:]+)'
@@ -23,11 +27,14 @@ def clean_event_summary(summary):
     
     if moment_match:
         moment = moment_match.group(1).strip()
-        return f"{course_code}: {moment}" if course_code else moment
+        result = f"{course_code}: {moment}" if course_code else moment
     else:
         # If no Moment found, return the course code (if any) followed by the cleaned summary
         cleaned_summary = summary.strip()
-        return f"{course_code}: {cleaned_summary}" if course_code else cleaned_summary
+        result = f"{course_code}: {cleaned_summary}" if course_code else cleaned_summary
+
+    print(f"Final result: {result}")  # Debug print
+    return result
 
 def clean_calendar():
     """
@@ -51,6 +58,8 @@ def clean_calendar():
             clean_event.add('dtend', component.get('dtend'))
             clean_event.add('location', component.get('location', ''))
             clean_event.add('description', component.get('description', ''))
+            
+            print(f"Event summary: {clean_event.get('summary')}")  # Debug print
             
             # Add cleaned event to the new calendar
             clean_cal.add_component(clean_event)
