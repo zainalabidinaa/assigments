@@ -18,54 +18,48 @@ def clean_event_summary(summary):
     """
     print(f"Original summary: {summary}")  # Debug print
 
-    # 1. Extract Moment Content
+    # Extract potential course code at the beginning (Four characters with at least one capital letter)
+    course_code_match = re.search(r'([A-Z][A-Za-z0-9]{3})', summary)
+    course_code = course_code_match.group(1) if course_code_match else None # To grab those initials first
+
+   # 1. Extract Moment Content
     moment_match = re.search(r'Moment:(.*)', summary)
     if moment_match:
-        summary = moment_match.group(1).strip() # Keep only moment content
+        moment_content = moment_match.group(1).strip()  # Capture it here.
+
     else:
         print("No 'Moment:' found in summary.")
         return summary
 
    # Remove everything after "Aktivitetstyp:"
-    aktivitetstyp_match = re.search(r'(.*)Aktivitetstyp:', summary)
+    aktivitetstyp_match = re.search(r'(.*)Aktivitetstyp:', moment_content)
     if aktivitetstyp_match:
-        summary = aktivitetstyp_match.group(1).strip()
+        moment_content = aktivitetstyp_match.group(1).strip()
     else:
-        print("No 'Aktivitetstyp:' found in summary.")  # Debug print
+        print("No 'Aktivitetstyp:' found in summary.")
 
-    # 2. Extract course code from Kurs.grp if applicable, and clean from dp onwards
+    # 2. Apply Cheat Codes if no course code found, before even extraction
+    if course_code is None:
+        for key, code in COURSE_CODE_MAPPING.items():
+            if key in summary: # using the whole to be safe
+                course_code = code
+                break # once we found it, break.
+               
+
+    # 3. If Kurs.grp is included do this process, otherwise keep the original course code
     if "Kurs.grp:" in summary:
         kurs_grp_match = re.search(r"Kurs\.grp: (.*)", summary)
         if kurs_grp_match:
-            kurs_grp = kurs_grp_match.group(1).strip()
-            for key, code in COURSE_CODE_MAPPING.items():
-                if key in kurs_grp:
-                    course_code = code
-                    break
-            else: course_code = None # If not found setting it to be None.
-        summary = re.sub(r'^[A-Z0-9, ]*dp\s*\d+', '', summary).strip()
-    else: course_code = None # Setting it to None for cases where it's missing
-           
+            kurs_grp = kurs_grp_match.group(1).strip() # Grabbing what's in the KURS GRP
+            summary = re.sub(r'^[A-Z0-9, ]*dp\s*\d+', '', summary).strip()  # Remove text before 'dp' in Kurs.grp cases
 
-    # 3. Extract first potential course code (Four characters with at least one capital letter)
-    if course_code is None: # Ensuring it only extracts if cheat code is missed
-        course_code_match = re.search(r'\b([A-Z][A-Za-z0-9]{3})\b', summary)
-        course_code = course_code_match.group(1) if course_code_match else None
-
-    # 4. Apply Cheat Codes if no course code found
-    if course_code is None:
-        for key, code in COURSE_CODE_MAPPING.items():
-            if key in summary:
-                course_code = code
-                break
-
-    # 5. Construct final result
+   # 4. Before Returning Construct final result, place it before
     if course_code:
-        result = f"{course_code}: {summary}"
+        result = f"{course_code}: {moment_content}"  # Use the correct format. BMA : Moment
     else:
-        result = summary # Otherwise, return just the summary without a code.
+        result = moment_content
 
-    print(f"Final result: {result}") # Debug print
+    print(f"Final result: {result}")
     return result
 
 def clean_calendar():
