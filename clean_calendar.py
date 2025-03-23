@@ -3,8 +3,8 @@ import requests
 import re
 from icalendar import Calendar, Event
 
-# Hämtar ICS-URL från miljövariabler
-ICS_URL = os.environ.get('ICS_URL')
+config_url = os.environ.get("CONFIG_URL")
+print(f"The configuration URL is: {config_url}")
 
 def clean_event_summary(summary):
     """
