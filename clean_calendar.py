@@ -9,24 +9,37 @@ ICS_URL = os.environ.get('ICS_URL')
 def clean_event_summary(summary):
     """
     Rensa händelsens sammanfattning genom att:
-    1. Extrahera endast kurskoden (t.ex. BMA451) om den finns i början av strängen.
+    1. Extrahera endast BMA451 om det finns flera kurskoder i början av strängen.
     2. Ta bort 'Aktivitetstyp' från sammanfattningen.
     3. Hantera fall där 'Moment:' inte finns.
+    4. Hantera "Laboration Klinisk hematologi: Patologiska diffar grupp 3" korrekt.
     """
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
-    # Extract course code at the beginning of the string
+    # Handle "Laboration Klinisk hematologi: Patologiska diffar grupp 3"
+    if "Laboration Klinisk hematologi: Patologiska diffar grupp 3" in summary:
+        return summary
+
+    # Handle "Laboration Klinisk hematologi"
+    if "Laboration Klinisk hematologi" in summary:
+        return  "Laboration Klinisk hematologi"
+
+    # Extract course codes at the beginning of the string
     course_code_match = re.search(r'([A-Z]{3}\d{3,4})', summary)
     if course_code_match:
-        extracted_course_code = course_code_match.group(1)
+        first_course_code = course_code_match.group(1)
+        if "BMA451" in summary:
+            extracted_course_code = "BMA451"
+        else:
+            extracted_course_code = first_course_code
         # Extract Moment from the summary
         moment_pattern = r'Moment:([^:]+)'
         match = re.search(moment_pattern, summary)
         if match:
             return f"{extracted_course_code} {match.group(1).strip()}"  # Return Course code and Moment
         else:
-            return extracted_course_code # Returns only the course code
+            return extracted_course_code  # Returns only the course code
     else:
         # Extract Moment from the summary
         moment_pattern = r'Moment:([^:]+)'
