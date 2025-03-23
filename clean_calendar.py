@@ -3,8 +3,12 @@ import requests
 import re
 from icalendar import Calendar, Event
 
-config_url = os.environ.get("CONFIG_URL")
-print(f"The configuration URL is: {config_url}")
+# Retrieve the ICS_URL from environment variables
+ICS_URL = os.environ.get('ICS_URL')
+
+# Optional: Check if the variable is set and raise an error if not
+if not ICS_URL:
+    raise ValueError("Missing ICS_URL environment variable. Please set it in your Render dashboard.")
 
 def clean_event_summary(summary):
     """
