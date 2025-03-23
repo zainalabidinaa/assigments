@@ -12,18 +12,18 @@ def clean_event_summary(summary):
     1. Extrahera endast BMA451 om det finns flera kurskoder i början av strängen.
     2. Ta bort 'Aktivitetstyp' från sammanfattningen.
     3. Hantera fall där 'Moment:' inte finns.
-    4. Hantera "Laboration Klinisk hematologi: Patologiska diffar grupp 3" korrekt.
+    4. Hantera "Laboration Klinisk hematologi: Patologiska diffar grupp 1/2/3/4" korrekt.
     """
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
-    # Handle "Laboration Klinisk hematologi: Patologiska diffar grupp 3"
-    if "Laboration Klinisk hematologi: Patologiska diffar grupp 3" in summary:
+    # Hantera "Laboration Klinisk hematologi: Patologiska diffar grupp 1/2/3/4"
+    if re.search(r"Laboration Klinisk hematologi: Patologiska diffar grupp [1-4]", summary):
         return summary
 
-    # Handle "Laboration Klinisk hematologi"
+    # Hantera "Laboration Klinisk hematologi"
     if "Laboration Klinisk hematologi" in summary:
-        return  "Laboration Klinisk hematologi"
+        return "Laboration Klinisk hematologi"
 
     # Extract course codes at the beginning of the string
     course_code_match = re.search(r'([A-Z]{3}\d{3,4})', summary)
