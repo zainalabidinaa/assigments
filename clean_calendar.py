@@ -13,13 +13,15 @@ def clean_event_summary(summary):
     2. Ta bort 'Aktivitetstyp' från sammanfattningen.
     3. Hantera fall där 'Moment:' inte finns.
     4. Hantera "Laboration Klinisk hematologi: Patologiska diffar grupp 1/2/3/4" korrekt.
+    5. Ta bort text före "Laboration Klinisk hematologi..."
     """
     # Remove 'Aktivitetstyp' explicitly
     summary = re.sub(r'Aktivitetstyp', '', summary)
 
     # Hantera "Laboration Klinisk hematologi: Patologiska diffar grupp 1/2/3/4"
-    if re.search(r"Laboration Klinisk hematologi: Patologiska diffar grupp [1-4]", summary):
-        return summary
+    match = re.search(r"Laboration Klinisk hematologi: Patologiska diffar grupp [1-4]", summary)
+    if match:
+        return match.group(0)
 
     # Hantera "Laboration Klinisk hematologi"
     if "Laboration Klinisk hematologi" in summary:
@@ -34,7 +36,7 @@ def clean_event_summary(summary):
         else:
             extracted_course_code = first_course_code
         # Extract Moment from the summary
-        moment_pattern = r'Moment:([^:]+)'
+        moment_pattern = r'Moment:([^:]+)', summary)
         match = re.search(moment_pattern, summary)
         if match:
             return f"{extracted_course_code} {match.group(1).strip()}"  # Return Course code and Moment
