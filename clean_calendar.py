@@ -78,7 +78,8 @@ def clean_calendar():
     Huvudfunktionen:
       - Laddar användarens kalender (Instructure) och schema‑kalendern (för tider)
       - Itererar över varje event i användarens kalender.
-          * Filtrerar bort event med "BMA152" eller "[BMA052 HT24]" i titeln.
+          * Filtrerar bort event vars sammanfattning innehåller "BMA152",
+            "[BMA052 HT24]" eller "[BMA201 VT25]".
           * Om eventet har en tid (dtstart som datetime) används den oförändrad.
           * Om endast ett datum anges (dtstart är date) så söks en matchning i schema‑kalendern.
             Om ingen matchning hittas används defaulttiden 23:00–23:59.
@@ -101,8 +102,8 @@ def clean_calendar():
         if not summary:
             continue
 
-        # Filtrera bort event med "BMA152" eller "[BMA052 HT24]" i titeln
-        if "BMA152" in summary or "[BMA052 HT24]" in summary:
+        # Filtrera bort event med "BMA152", "[BMA052 HT24]" eller "[BMA201 VT25]" i titeln
+        if "BMA152" in summary or "[BMA052 HT24]" in summary or "[BMA201 VT25]" in summary:
             continue
 
         # Extrahera en rensad titel
