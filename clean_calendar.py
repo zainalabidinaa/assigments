@@ -1,82 +1,78 @@
 import os
 import requests
-import re
+import datetime
 from icalendar import Calendar, Event
 
-# Retrieve the ICS_URL from environment variables
+# Hämtar ICS-URL från miljövariabler
 ICS_URL = os.environ.get('ICS_URL')
 
-# Optional: Check if the variable is set and raise an error if not
-if not ICS_URL:
-    raise ValueError("Missing ICS_URL environment variable. Please set it in your Render dashboard.")
+def adjust_event_times(event):
+    """
+    Justerar tidsangivelserna för ett event:
+      - Om dtstart endast är ett datum (alltså ett date-objekt, inte datetime)
+        så sätter vi starttiden till 23:00.
+      - Om dtend också är ett date-objekt (eller saknas) så sätts sluttiden till 23:59.
+      - Om eventet redan innehåller exakta tidpunkter (datetime) lämnas dessa oförändrade.
+    """
+    dtstart_field = event.get('dtstart')
+    if not dtstart_field:
+        return None, None  # Om inget startdatum finns
 
-def clean_event_summary(summary):
-    """
-    Rensar händelsens sammanfattning enligt följande:
-      - Tar bort strängen 'Aktivitetstyp'.
-      - Tar bort oönskade kurskoder (BMA401, BMK101, KUBM26) men behåller BMA451.
-      - Om sammanfattningen innehåller 'Moment:' extraheras texten efter detta.
-         - Om den extraherade texten börjar med "Laboration Klinisk hematologi:" tas en avslutande " : Okänd" bort.
-         - För andra fall extraheras texten upp till första kolon.
-    """
-    # Ta bort 'Aktivitetstyp'
-    summary = re.sub(r'Aktivitetstyp', '', summary)
-    
-    # Ta bort oönskade kurskoder
-    undesired_codes = ["BMA401", "BMK101", "KUBM26"]
-    for code in undesired_codes:
-        summary = re.sub(r'\b' + code + r'\b,?\s*', '', summary)
-    
-    # Rensa eventuella inledande kommatecken
-    summary = re.sub(r'^\s*,\s*', '', summary)
-    
-    # Om texten innehåller "Moment:" så extrahera det relevanta innehållet
-    if "Moment:" in summary:
-        # Extrahera allt efter "Moment:"
-        moment_text = summary.split("Moment:", 1)[1].strip()
-        # Om det är ett "Laboration Klinisk hematologi:"-moment
-        if moment_text.startswith("Laboration Klinisk hematologi:"):
-            # Ta bort en eventuell avslutning " : Okänd"
-            moment_text = re.sub(r'\s*:\s*Okänd$', '', moment_text)
-            return moment_text.strip()
+    dtstart = dtstart_field.dt
+    dtend_field = event.get('dtend')
+    dtend = dtend_field.dt if dtend_field else None
+
+    # Om dtstart inte innehåller en tid (dvs bara datum) så sätt standardtid 23:00
+    if not isinstance(dtstart, datetime.datetime):
+        dtstart = datetime.datetime.combine(dtstart, datetime.time(23, 0))
+        # Om dtend saknas, sätt dtend till samma datum med tid 23:59
+        if dtend is None:
+            dtend = datetime.datetime.combine(event.get('dtstart').dt, datetime.time(23, 59))
         else:
-            # För andra moment: extrahera texten upp till nästa kolon
-            moment_pattern = r'^([^:]+)'
-            match = re.search(moment_pattern, moment_text)
-            if match:
-                return match.group(1).strip()
-            else:
-                return moment_text.strip()
-    else:
-        return summary.strip()
+            # Om dtend är ett date-objekt, lägg till standardtiden 23:59
+            if not isinstance(dtend, datetime.datetime):
+                dtend = datetime.datetime.combine(dtend, datetime.time(23, 59))
+    return dtstart, dtend
 
 def clean_calendar():
     """
-    Hämtar ICS-kalendern, rensar varje VEVENT med den modifierade sammanfattningen
-    och returnerar den nya kalendern som iCal-data.
+    Hämtar ICS-kalendern, filtrerar ut endast de events som innehåller "BMA451"
+    i sammanfattningen och justerar tidsangivelserna om de saknas.
+    Returnerar den nya kalendern som iCal-data.
     """
     response = requests.get(ICS_URL)
     original_cal = Calendar.from_ical(response.text)
-    
+
     clean_cal = Calendar()
-    clean_cal.add('prodid', '-//Cleaned HKR Calendar//EN')
+    clean_cal.add('prodid', '-//Filtered BMA451 Calendar//EN')
     clean_cal.add('version', '2.0')
-    
+
     for component in original_cal.walk():
         if component.name == "VEVENT":
-            clean_event = Event()
-            # Använd den modifierade funktionen för att rensa sammanfattningen
-            clean_event.add('summary', clean_event_summary(component.get('summary')))
-            clean_event.add('dtstart', component.get('dtstart'))
-            clean_event.add('dtend', component.get('dtend'))
-            clean_event.add('location', component.get('location', ''))
-            clean_event.add('description', component.get('description', ''))
-            
-            clean_cal.add_component(clean_event)
-    
+            summary = component.get('summary')
+            # Filtrera: endast event med "BMA451" i sammanfattningen beaktas
+            if summary and "BMA451" in summary:
+                clean_event = Event()
+                clean_event.add('summary', summary)
+
+                # Justera tidpunkterna om de endast är datum
+                new_dtstart, new_dtend = adjust_event_times(component)
+                if new_dtstart is not None:
+                    clean_event.add('dtstart', new_dtstart)
+                if new_dtend is not None:
+                    clean_event.add('dtend', new_dtend)
+
+                # Kopiera över övriga fält om de finns
+                if component.get('location'):
+                    clean_event.add('location', component.get('location'))
+                if component.get('description'):
+                    clean_event.add('description', component.get('description'))
+
+                clean_cal.add_component(clean_event)
+
     return clean_cal.to_ical()
 
 if __name__ == "__main__":
-    # För testning: skriv ut den rensade iCal-strängen
+    # För testning: skriv ut den filtrerade och justerade iCal-strängen
     cleaned_ical = clean_calendar()
     print(cleaned_ical.decode('utf-8'))
