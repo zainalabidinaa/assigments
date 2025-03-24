@@ -1,156 +1,101 @@
+import os
 import requests
 import datetime
 import re
 from icalendar import Calendar, Event
 
-# ICS-URL:er
-USER_ICS_URL = "https://hkr.instructure.com/feeds/calendars/user_xOrYwkKlKq1lm1iOXuRabKHLhfIVId0kLKCCs7C4.ics"
-SCHEMA_ICS_URL = "https://schema.hkr.se/setup/jsp/SchemaICAL.ics?startDatum=2025-03-13&intervallTyp=a&intervallAntal=1&sokMedAND=false&sprak=SV&resurser=k.BMA451%202025%2004%20100%20DAG%20NML%20sv-%2C"
+# Hämtar ICS-URL från miljövariabler
+ICS_URL = os.environ.get('ICS_URL')
 
-def load_calendar(url):
-    response = requests.get(url)
-    return Calendar.from_ical(response.text)
-
-def clean_text(text):
+def adjust_event_times(event):
     """
-    Enkel funktion för att "rensa" texten från onödig whitespace
-    och göra om till gemener för jämförelse.
+    Justerar tidsangivelserna för ett event:
+      - Om dtstart endast är ett datum (dvs ett date-objekt) så sätts starttiden till 23:00.
+      - Om dtend saknas eller endast är ett datum, sätts sluttiden till 23:59.
+      - Om eventet redan innehåller exakta tidpunkter (datetime) lämnas dessa oförändrade.
     """
-    return re.sub(r'\s+', ' ', text).strip().lower()
-
-def extract_lecture_title(summary):
-    """
-    Försök extrahera ett centralt del av titeln.
-    I detta exempel antar vi att ordet "laboratoriemedicin" är
-    karakteristiskt och att den relevanta titeln börjar där.
-    Om inte finns returneras hela sammanfattningen.
-    """
-    summary_clean = clean_text(summary)
-    idx = summary_clean.find("laboratoriemedicin")
-    if idx != -1:
-        # Ta ut texten från "laboratoriemedicin" och vidare,
-        # men stopp vid t.ex. "sign:" eller "moment:" om de förekommer.
-        sub = summary_clean[idx:]
-        m = re.search(r'(sign:|moment:)', sub)
-        if m:
-            return sub[:m.start()].strip()
-        else:
-            return sub.strip()
-    return summary_clean
-
-def find_schema_times(user_event, schema_events):
-    """
-    För ett user_event (som saknar tid, dvs endast ett datum)
-    letar vi igenom schema_events (från schemat) och söker efter ett event
-    med samma datum där den "rensade" titeln (utifrån lecture_title) matchar (enkel substring-match).
-    Returnerar (dtstart, dtend) från schema-eventet om en matchning hittas, annars None.
-    """
-    # Hämta datumet (antingen om dtstart är date eller datetime)
-    dtstart_field = user_event.get('dtstart')
+    dtstart_field = event.get('dtstart')
     if not dtstart_field:
-        return None
-    user_date = dtstart_field.dt if isinstance(dtstart_field.dt, datetime.date) else dtstart_field.dt.date()
-    user_title = extract_lecture_title(user_event.get('summary', ''))
-    
-    for se in schema_events:
-        # Vi kräver att schema-eventet har tid (dtstart som datetime)
-        schema_dt = se.get('dtstart').dt
-        if not isinstance(schema_dt, datetime.datetime):
-            continue
-        schema_date = schema_dt.date()
-        if schema_date == user_date:
-            schema_title = extract_lecture_title(se.get('summary', ''))
-            # Enkel matchning: om den rensade titeln från användarens event
-            # finns som substring i schema-eventets rensade titel, eller vice versa.
-            if user_title in schema_title or schema_title in user_title:
-                return se.get('dtstart').dt, se.get('dtend').dt
-    return None
+        return None, None  # Om inget startdatum finns
 
-def adjust_zoom_title(title, event):
+    dtstart = dtstart_field.dt
+    dtend_field = event.get('dtend')
+    dtend = dtend_field.dt if dtend_field else None
+
+    # Om dtstart endast innehåller ett datum (dvs ingen tid), sätt standardtiden 23:00
+    if not isinstance(dtstart, datetime.datetime):
+        dtstart = datetime.datetime.combine(dtstart, datetime.time(23, 0))
+        # Om dtend saknas, sätt dtend till samma datum med tid 23:59
+        if dtend is None:
+            dtend = datetime.datetime.combine(event.get('dtstart').dt, datetime.time(23, 59))
+        else:
+            # Om dtend endast är ett datum, lägg till standardtiden 23:59
+            if not isinstance(dtend, datetime.datetime):
+                dtend = datetime.datetime.combine(dtend, datetime.time(23, 59))
+    return dtstart, dtend
+
+def adjust_event_summary(summary, event):
     """
-    Om eventet innehåller "zoom" i location eller description,
-    lägg till "Zoom " i början av titeln om det inte redan finns.
+    Om eventet innehåller en Zoom-länk (antingen i location eller description)
+    modifieras sammanfattningen. Den inledande kurskoden (exempelvis "BMA401 VT25")
+    tas bort om den finns, och istället läggs "Zoom" i början.
     """
-    loc = event.get('location', '')
-    desc = event.get('description', '')
-    if ("zoom" in loc.lower()) or ("zoom meeting" in desc.lower()):
-        if not title.lower().startswith("zoom "):
-            return "Zoom " + title
-    return title
+    location = event.get('location', '')
+    description = event.get('description', '')
+
+    # Kolla om "zoom" finns i location eller "zoom meeting" i description (gemener)
+    if ("zoom" in location.lower()) or ("zoom meeting" in description.lower()):
+        # Försök att ta bort inledande kurskod, t.ex. "BMA401 VT25 "
+        modified = re.sub(r'^[A-Z]+\d+\s+VT\d+\s+', '', summary)
+        return "Zoom " + modified.strip()
+    else:
+        return summary
 
 def clean_calendar():
     """
-    Huvudfunktion:
-      - Laddar användarens kalender från Instructure.
-      - Laddar schema-kalendern (som innehåller korrekta tider).
-      - Itererar över användarens events.
-          * Filtrerar bort de med "BMA152" i titeln.
-          * Om eventet saknar tid (dtstart är date) så försöker vi hitta
-            motsvarande schema-event (samma datum och liknande titel).
-          * Uppdaterar dtstart och dtend om vi hittar en match.
-          * Justerar titeln om det är ett Zoom-event.
-      - Returnerar en ny kalender med de uppdaterade eventen.
+    Hämtar ICS-kalendern, tar bort events med "BMA152" i sammanfattningen och
+    justerar tidsangivelserna om de saknar tid. Om ett event innehåller Zoom-länk
+    ändras sammanfattningen enligt ovan.
+    Returnerar den nya kalendern som iCal-data.
     """
-    user_cal = load_calendar(USER_ICS_URL)
-    schema_cal = load_calendar(SCHEMA_ICS_URL)
-    # Skapa lista över schema-event
-    schema_events = [comp for comp in schema_cal.walk() if comp.name == "VEVENT"]
+    response = requests.get(ICS_URL)
+    original_cal = Calendar.from_ical(response.text)
 
-    new_cal = Calendar()
-    new_cal.add('prodid', '-//Uppdaterad Kalender//EN')
-    new_cal.add('version', '2.0')
+    clean_cal = Calendar()
+    clean_cal.add('prodid', '-//Filtered Calendar (Removed BMA152)//EN')
+    clean_cal.add('version', '2.0')
 
-    for comp in user_cal.walk():
-        if comp.name != "VEVENT":
-            continue
-
-        summary = comp.get('summary')
-        if not summary:
-            continue
-
-        # Filtrera bort event med "BMA152" i titeln
-        if "BMA152" in summary:
-            continue
-
-        # Ta ut en "rensad" version av titeln
-        lecture_title = extract_lecture_title(summary)
-
-        # Om dtstart saknar tid (dvs endast är ett date) försöker vi hitta tider från schemat
-        dtstart_field = comp.get('dtstart')
-        if dtstart_field is None:
-            continue
-
-        # Om dtstart är ett datetime, vi antar att tiden redan är satt.
-        if isinstance(dtstart_field.dt, datetime.datetime):
-            new_dtstart = dtstart_field.dt
-            dtend_field = comp.get('dtend')
-            new_dtend = dtend_field.dt if dtend_field else new_dtstart + datetime.timedelta(hours=1)
-        else:
-            # dtstart är bara ett datum – försök hämta tider från schema
-            times = find_schema_times(comp, schema_events)
-            if times is None:
-                # Om vi inte hittar någon match i schemat kan vi hoppa över eventet
+    for component in original_cal.walk():
+        if component.name == "VEVENT":
+            summary = component.get('summary')
+            # Ta bort event med "BMA152" i sammanfattningen
+            if summary and "BMA152" in summary:
                 continue
-            new_dtstart, new_dtend = times
 
-        # Justera titeln om eventet verkar vara ett Zoom-event
-        new_title = adjust_zoom_title(lecture_title, comp)
+            # Om eventet är ett Zoom-möte, ändra titeln
+            new_summary = adjust_event_summary(summary, component) if summary else summary
 
-        new_event = Event()
-        new_event.add('summary', new_title)
-        new_event.add('dtstart', new_dtstart)
-        new_event.add('dtend', new_dtend)
+            clean_event = Event()
+            clean_event.add('summary', new_summary)
 
-        # Kopiera övriga fält om de finns
-        if comp.get('location'):
-            new_event.add('location', comp.get('location'))
-        if comp.get('description'):
-            new_event.add('description', comp.get('description'))
+            # Justera tidsangivelser om de bara är datum
+            new_dtstart, new_dtend = adjust_event_times(component)
+            if new_dtstart is not None:
+                clean_event.add('dtstart', new_dtstart)
+            if new_dtend is not None:
+                clean_event.add('dtend', new_dtend)
 
-        new_cal.add_component(new_event)
+            # Kopiera över övriga fält om de finns
+            if component.get('location'):
+                clean_event.add('location', component.get('location'))
+            if component.get('description'):
+                clean_event.add('description', component.get('description'))
 
-    return new_cal.to_ical()
+            clean_cal.add_component(clean_event)
+
+    return clean_cal.to_ical()
 
 if __name__ == "__main__":
-    updated_ical = clean_calendar()
-    print(updated_ical.decode('utf-8'))
+    # För testning: skriv ut den filtrerade och justerade iCal-strängen
+    cleaned_ical = clean_calendar()
+    print(cleaned_ical.decode('utf-8'))
