@@ -1,117 +1,92 @@
-import os
 import requests
 import datetime
-import re
 from icalendar import Calendar, Event
 
-# ICS-URL från HKRs schema med BMA451 (exempel)
-ICS_URL = "https://schema.hkr.se/setup/jsp/SchemaICAL.ics?startDatum=2025-03-13&intervallTyp=a&intervallAntal=1&sokMedAND=false&sprak=SV&resurser=k.BMA451%202025%2004%20100%20DAG%20NML%20sv-"
+# ICS-URL från schema (BMA451)
+ICS_URL = "https://schema.hkr.se/setup/jsp/SchemaICAL.ics?startDatum=2025-03-13&intervallTyp=a&intervallAntal=1&sokMedAND=false&sprak=SV&resurser=k.BMA451%202025%2004%20100%20DAG%20NML%20sv-%2C"
+
+# Mappning från identifierande nyckelord i föreläsningsnamnet till önskade tider.
+# Exempel: Om sammanfattningen innehåller "Laboratoriemedicin" så sätts start- och sluttid enligt tuple.
+lecture_time_mapping = {
+    "Laboratoriemedicin": (datetime.time(8, 30), datetime.time(11, 0)),
+    # Lägg gärna till fler mappningar, exempelvis:
+    # "Föreläsning": (datetime.time(9, 0), datetime.time(10, 30)),
+    # "Laboration": (datetime.time(12, 0), datetime.time(13, 0)),
+}
 
 def get_default_time_for_lecture(summary, date_obj):
     """
-    Baserat på innehållet i sammanfattningen avgör vi vilken tid ett event ska få om endast ett datum finns.
-    Justera dessa tider enligt dina behov.
+    Letar efter ett nyckelord från lecture_time_mapping i sammanfattningen.
+    Om ett matchande nyckelord hittas sätts start- och sluttid enligt mappningen.
+    Om inget matchande nyckelord finns används defaulttiden 23:00 - 23:59.
     """
-    if "Föreläsning" in summary:
-        start_time = datetime.time(9, 0)
-        end_time = datetime.time(10, 30)
-    elif "Laboration" in summary:
-        start_time = datetime.time(12, 0)
-        end_time = datetime.time(13, 0)
-    elif "Seminarium" in summary:
-        start_time = datetime.time(13, 0)
-        end_time = datetime.time(14, 0)
-    else:
-        # Standardtid om ingen känd aktivitet hittas
-        start_time = datetime.time(23, 0)
-        end_time = datetime.time(23, 59)
-    return (datetime.datetime.combine(date_obj, start_time),
-            datetime.datetime.combine(date_obj, end_time))
+    for key, (start_time, end_time) in lecture_time_mapping.items():
+        if key in summary:
+            return (datetime.datetime.combine(date_obj, start_time),
+                    datetime.datetime.combine(date_obj, end_time))
+    return (datetime.datetime.combine(date_obj, datetime.time(23, 0)),
+            datetime.datetime.combine(date_obj, datetime.time(23, 59)))
 
 def adjust_event_times(event, summary):
     """
-    Justerar tidsangivelserna för ett event:
-      - Om dtstart endast är ett datum (dvs ett date-objekt) så hämtas default-tid baserat på eventets sammanfattning.
-      - Om dtstart redan är ett datetime-objekt lämnas tiden oförändrad.
+    Om eventet endast har ett datum (dvs dtstart saknar tid) används get_default_time_for_lecture()
+    för att sätta rätt tid baserat på eventets sammanfattning.
+    Om dtstart redan är ett datetime-objekt används det som det är (och dtend sätts till dtstart +1 timme om det saknas).
     """
     dtstart_field = event.get('dtstart')
     if not dtstart_field:
-        return None, None  # Om inget startdatum finns
-
+        return None, None
     dtstart = dtstart_field.dt
     dtend_field = event.get('dtend')
     dtend = dtend_field.dt if dtend_field else None
 
-    # Om dtstart inte innehåller en tid, avgör tiden baserat på sammanfattningen
     if not isinstance(dtstart, datetime.datetime):
+        # dtstart är ett date-objekt
         dtstart, dtend = get_default_time_for_lecture(summary, dtstart)
-    # Om dtend saknas men dtstart är ett datetime, sätt ett default-offset (kan anpassas)
     elif dtend is None:
         dtend = dtstart + datetime.timedelta(hours=1)
-
     return dtstart, dtend
-
-def adjust_event_summary(summary, event):
-    """
-    Om eventet innehåller en Zoom-länk (i location eller description)
-    ändras sammanfattningen så att den inleds med "Zoom ".
-    Försöker ta bort en eventuell inledande kurskod.
-    """
-    location = event.get('location', '')
-    description = event.get('description', '')
-
-    if ("zoom" in location.lower()) or ("zoom meeting" in description.lower()):
-        # Ta bort en eventuell inledande kurskod (exempelvis "BMA401 VT25 ") med regex
-        modified = re.sub(r'^[A-Z]+\d+\s+VT\d+\s+', '', summary)
-        return "Zoom " + modified.strip()
-    else:
-        return summary
 
 def clean_calendar():
     """
-    Hämtar ICS-kalendern, filtrerar bort events med "BMA152" i sammanfattningen,
-    justerar tidsangivelserna om de saknar tid (baserat på typ av föreläsning) och
-    ändrar titeln för Zoom-möten.
+    Hämtar ICS-kalendern från schema.hkr.se, filtrerar bort event med "BMA152" i titeln
+    och justerar tidsangivelserna baserat på eventets sammanfattning (t.ex. att identifiera
+    "Laboratoriemedicin" och sätta rätt tider).
     Returnerar den nya kalendern som iCal-data.
     """
     response = requests.get(ICS_URL)
     original_cal = Calendar.from_ical(response.text)
 
     clean_cal = Calendar()
-    clean_cal.add('prodid', '-//Filtered Calendar (BMA451) - Removed BMA152//EN')
+    clean_cal.add('prodid', '-//Filtered Schema Calendar for Lectures//EN')
     clean_cal.add('version', '2.0')
 
     for component in original_cal.walk():
         if component.name == "VEVENT":
             summary = component.get('summary')
-            # Filtrera bort event med "BMA152" i titeln
+            # Ta bort event som innehåller "BMA152" i titeln
             if summary and "BMA152" in summary:
                 continue
 
-            # Modifiera titeln om eventet är ett Zoom-möte
-            new_summary = adjust_event_summary(summary, component) if summary else summary
+            # Sätt rätt tid om endast datum anges
+            new_dtstart, new_dtend = adjust_event_times(component, summary)
 
-            # Justera tiderna baserat på eventets datum och typ
-            new_dtstart, new_dtend = adjust_event_times(component, new_summary)
+            new_event = Event()
+            new_event.add('summary', summary)
+            if new_dtstart:
+                new_event.add('dtstart', new_dtstart)
+            if new_dtend:
+                new_event.add('dtend', new_dtend)
 
-            clean_event = Event()
-            clean_event.add('summary', new_summary)
-            if new_dtstart is not None:
-                clean_event.add('dtstart', new_dtstart)
-            if new_dtend is not None:
-                clean_event.add('dtend', new_dtend)
-
-            # Kopiera övriga fält
+            # Kopiera över övriga fält om de finns
             if component.get('location'):
-                clean_event.add('location', component.get('location'))
+                new_event.add('location', component.get('location'))
             if component.get('description'):
-                clean_event.add('description', component.get('description'))
+                new_event.add('description', component.get('description'))
 
-            clean_cal.add_component(clean_event)
-
+            clean_cal.add_component(new_event)
     return clean_cal.to_ical()
 
 if __name__ == "__main__":
-    # För testning: skriv ut den filtrerade och justerade iCal-strängen
     cleaned_ical = clean_calendar()
     print(cleaned_ical.decode('utf-8'))
