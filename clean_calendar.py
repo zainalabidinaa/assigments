@@ -1,6 +1,8 @@
 import requests
 import datetime
 import re
+import json
+import os
 from icalendar import Calendar, Event
 
 # ICS URLs
@@ -8,6 +10,7 @@ USER_ICS_URL = "https://hkr.instructure.com/feeds/calendars/user_xOrYwkKlKq1lm1i
 SCHEMA_ICS_URL = "https://schema.hkr.se/setup/jsp/SchemaICAL.ics?startDatum=2025-03-13&intervallTyp=a&intervallAntal=1&sokMedAND=false&sprak=SV&resurser=k.BMA451%202025%2004%20100%20DAG%20NML%20sv-%2C"
 
 TODOIST_API_TOKEN = "46fc28554f4438c1645854cbdaa7ea72d3cb63de"
+TASKS_FILE = "added_tasks.json"
 
 def load_calendar(url):
     response = requests.get(url)
@@ -54,7 +57,24 @@ def adjust_zoom_title(title, event):
             return "Zoom " + title
     return title
 
+def load_added_tasks():
+    if os.path.exists(TASKS_FILE):
+        with open(TASKS_FILE, "r") as file:
+            return json.load(file)
+    return {}
+
+def save_added_tasks(tasks):
+    with open(TASKS_FILE, "w") as file:
+        json.dump(tasks, file, indent=2, default=str)
+
 def create_todoist_task(api_token, task_name, due_datetime=None):
+    tasks = load_added_tasks()
+    task_key = f"{task_name}_{due_datetime.isoformat() if due_datetime else 'no_date'}"
+
+    if task_key in tasks:
+        print(f"⚠️ Task already added, skipping: {task_name}")
+        return
+
     url = "https://api.todoist.com/rest/v2/tasks"
     headers = {
         "Authorization": f"Bearer {api_token}",
@@ -68,6 +88,8 @@ def create_todoist_task(api_token, task_name, due_datetime=None):
     response = requests.post(url, json=data, headers=headers)
     if response.status_code in [200, 201]:
         print(f"✅ Added Todoist task: {task_name}")
+        tasks[task_key] = True
+        save_added_tasks(tasks)
     else:
         print(f"❌ Failed to add task {task_name}: {response.text}")
 
