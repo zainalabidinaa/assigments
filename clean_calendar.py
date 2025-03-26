@@ -72,7 +72,7 @@ def create_todoist_task(api_token, task_name, due_datetime=None):
     task_key = f"{task_name}_{due_datetime.isoformat() if due_datetime else 'no_date'}"
 
     if task_key in tasks:
-        print(f"⚠️ Task already added, skipping: {task_name}")
+        print(f"⚠️ Task previously added (even if completed), skipping: {task_name}")
         return
 
     url = "https://api.todoist.com/rest/v2/tasks"
